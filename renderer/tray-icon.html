@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="c"></canvas>
+  <script>
+    // Logical size in points. macOS menu bar items are ~18pt tall.
+    const W = 28;
+    const H = 19;
+    const SCALE = 2; // retina
+
+    const canvas = document.getElementById("c");
+    canvas.width = W * SCALE;
+    canvas.height = H * SCALE;
+
+    // Cache the 2D context — avoids repeated getContext() calls
+    const ctx = canvas.getContext("2d", { willReadFrequently: false });
+
+    // Pre-calculate constants
+    const barH = 4;
+    const barY = 13;
+    const barX = 3;
+    const barW = W - barX * 2;
+    const radius = barH / 2;
+    const halfW = W / 2;
+
+    function roundRect(x, y, w, h, r) {
+      const rad = Math.min(r, h / 2, w / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + rad, y);
+      ctx.arcTo(x + w, y, x + w, y + h, rad);
+      ctx.arcTo(x + w, y + h, x, y + h, rad);
+      ctx.arcTo(x, y + h, x, y, rad);
+      ctx.arcTo(x, y, x + w, y, rad);
+      ctx.closePath();
+    }
+
+    window.renderIcon = function (percent) {
+      ctx.save();
+      ctx.scale(SCALE, SCALE);
+      ctx.clearRect(0, 0, W, H);
+
+      const hasValue = typeof percent === "number" && !isNaN(percent);
+      const pct = hasValue ? Math.max(0, Math.min(100, Math.round(percent))) : null;
+      const label = hasValue ? `${pct}%` : "…";
+
+      // Template image: draw in solid black, transparent background.
+      // macOS will tint it appropriately for light/dark menu bar.
+      ctx.fillStyle = "#000";
+
+      // Text on top
+      ctx.font = "600 9px -apple-system, BlinkMacSystemFont, 'SF Pro Text', Helvetica, Arial, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillText(label, halfW, 9);
+
+      // Background track (semi-transparent black; tints to faint icon color)
+      ctx.globalAlpha = 0.28;
+      roundRect(barX, barY, barW, barH, radius);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // Filled portion
+      if (hasValue && pct > 0) {
+        const fillW = Math.max(barH, (barW * pct) / 100);
+        roundRect(barX, barY, fillW, barH, radius);
+        ctx.fill();
+      }
+
+      ctx.restore();
+      return canvas.toDataURL("image/png");
+    };
+  </script>
+</body>
+
+</html>

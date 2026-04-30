@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+out/
+build/Release/
+*.dmg
+*.exe
+*.AppImage
+*.deb
+*.rpm
+*.snap
+*.zip
+*.blockmap
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# electron-store user data (must never be committed)
+*.local.json
+
+# Code signing / notarization secrets
+*.p12
+*.pem
+*.mobileprovision
+*.cer
+*.keychain
+build/entitlements.*.local.plist
+
+# Misc
+.cache/
+coverage/

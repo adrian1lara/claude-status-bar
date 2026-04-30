@@ -1,0 +1,22 @@
+{
+  "name": "claude-usage-bar",
+  "version": "1.0.0",
+  "description": "Menu bar / system tray app showing Claude API usage in real time",
+  "main": "main.js",
+  "author": "Adrian Lara",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0"
+  },
+  "devDependencies": {
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1"
+  }
+}
