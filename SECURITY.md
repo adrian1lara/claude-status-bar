@@ -35,7 +35,7 @@ Out of scope:
 - A persistent claude.ai session cookie, kept in Electron's default session
   store under your OS user data directory (e.g.
   `~/Library/Application Support/claude-usage-bar` on macOS).
-- Local preferences (poll interval, launch-at-login) via `electron-store`.
+- Local preferences (poll interval, launch-at-login) in a JSON file in the same directory.
 
 No data is sent anywhere except claude.ai itself, using your own logged-in
 session.

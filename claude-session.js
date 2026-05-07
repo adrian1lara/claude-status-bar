@@ -57,8 +57,13 @@ function getOrCreateScraper() {
     },
   });
   scraperWin.webContents.setUserAgent(REAL_UA);
-  // Prevent audio/video from loading in the scraper
   scraperWin.webContents.setAudioMuted(true);
+  // Block any attempt by the page to open a new window
+  scraperWin.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  // Block navigation away from claude.ai (e.g. tracking redirects)
+  scraperWin.webContents.on("will-navigate", (e, url) => {
+    if (!url.startsWith(CLAUDE_ORIGIN)) e.preventDefault();
+  });
   scraperWin.on("closed", () => {
     scraperWin = null;
   });
@@ -135,6 +140,24 @@ function openLogin() {
     });
     win.setMenuBarVisibility(false);
     win.webContents.setUserAgent(REAL_UA);
+    // Block popups — OAuth flows use redirects, not window.open
+    win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    // Login window may navigate within claude.ai (OAuth callbacks etc.) but
+    // must never be redirected to a third-party origin
+    win.webContents.on("will-navigate", (e, url) => {
+      try {
+        const u = new URL(url);
+        if (
+          u.hostname !== "claude.ai" &&
+          !u.hostname.endsWith(".anthropic.com") &&
+          !u.hostname.endsWith(".google.com")
+        ) {
+          e.preventDefault();
+        }
+      } catch {
+        e.preventDefault();
+      }
+    });
     win.loadURL(LOGIN_URL);
 
     let resolved = false;

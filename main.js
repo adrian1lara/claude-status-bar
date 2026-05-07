@@ -114,7 +114,6 @@ async function renderTrayIconImage(percent) {
     const arg = typeof percent === "number" ? percent : "null";
     const dataUrl = await iconRenderer.webContents.executeJavaScript(
       `window.renderIcon(${arg})`,
-      true,
     );
     if (!dataUrl) return null;
     const base64 = dataUrl.split(",")[1];
@@ -358,7 +357,13 @@ ipcMain.handle("settings:get", () => ({
 }));
 
 ipcMain.handle("settings:save", (_e, settings) => {
-  if (settings.poll_interval_seconds) {
+  // Reject anything that isn't a plain object with only known keys
+  if (!settings || typeof settings !== "object" || Array.isArray(settings))
+    return false;
+  const allowed = new Set(["poll_interval_seconds", "launch_at_login"]);
+  if (Object.keys(settings).some((k) => !allowed.has(k))) return false;
+
+  if (settings.poll_interval_seconds !== undefined) {
     store.set(
       "poll_interval_seconds",
       Math.max(30, Number(settings.poll_interval_seconds) || 60),
