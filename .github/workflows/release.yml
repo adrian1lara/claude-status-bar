@@ -18,17 +18,8 @@ jobs:
         include:
           - os: macos-latest
             build: npm run build:mac -- --publish never
-            artifacts: |
-              dist/*.dmg
-              dist/*.zip
-              dist/*.blockmap
-              dist/latest-mac.yml
           - os: windows-latest
             build: npm run build:win -- --publish never
-            artifacts: |
-              dist/*.exe
-              dist/*.blockmap
-              dist/latest.yml
 
     runs-on: ${{ matrix.os }}
 
@@ -57,24 +48,20 @@ jobs:
           # WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate SHA256 checksums
+      - name: Collect installer
         shell: bash
         run: |
-          cd dist
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            shasum -a 256 *.dmg *.zip 2>/dev/null > SHA256SUMS-${{ matrix.os }}.txt || true
-          else
-            sha256sum *.exe 2>/dev/null > SHA256SUMS-${{ matrix.os }}.txt || true
-          fi
-          cat SHA256SUMS-${{ matrix.os }}.txt
+          mkdir -p release
+          # macOS: grab only the .dmg (skip .zip, .blockmap, update ymls)
+          # Windows: grab only the .exe installer (skip .blockmap, update ymls)
+          find dist -maxdepth 1 \( -name "*.dmg" -o -name "*.exe" \) -exec cp {} release/ \;
+          ls -lah release/
 
-      - name: Upload build artifacts
+      - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.os }}-build
-          path: |
-            ${{ matrix.artifacts }}
-            dist/SHA256SUMS-${{ matrix.os }}.txt
+          name: ${{ matrix.os }}-installer
+          path: release/*
           if-no-files-found: error
 
   release:
@@ -92,10 +79,11 @@ jobs:
           find artifacts -type f -exec cp {} release/ \;
           ls -lah release/
 
-      - name: Create GitHub Release (draft)
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          draft: false
+          prerelease: false
           generate_release_notes: true
           files: release/*
           fail_on_unmatched_files: false
