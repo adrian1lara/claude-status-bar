@@ -7,7 +7,7 @@
 //  - logout(): clears cookies for claude.ai.
 //  - destroy(): cleanup persistent resources.
 
-const { BrowserWindow, session } = require("electron");
+const { BrowserWindow, session, powerMonitor } = require("electron");
 
 const CLAUDE_ORIGIN = "https://claude.ai";
 const LOGIN_URL = `${CLAUDE_ORIGIN}/login`;
@@ -21,7 +21,28 @@ const REAL_UA =
 // memory and avoids the cost of renderer-process spin-up each time.
 let scraperWin = null;
 
+// After a wake-from-sleep the persistent scraper window may be in a broken
+// state (zombie renderer, stale HTTP state). Destroy it so next poll gets
+// a fresh window.
+function resetScraperOnWake() {
+  destroyScraper();
+}
+
+// Wire up once when the module first loads. powerMonitor is only available
+// after app is ready, so we defer until the first getOrCreateScraper call.
+let _wakeListenerAttached = false;
+function ensureWakeListener() {
+  if (_wakeListenerAttached) return;
+  _wakeListenerAttached = true;
+  try {
+    powerMonitor.on("resume", resetScraperOnWake);
+  } catch {
+    // powerMonitor not ready yet — will be attached on first scraper creation
+  }
+}
+
 function getOrCreateScraper() {
+  ensureWakeListener();
   if (scraperWin && !scraperWin.isDestroyed()) return scraperWin;
   scraperWin = new BrowserWindow({
     show: false,
@@ -32,19 +53,23 @@ function getOrCreateScraper() {
       nodeIntegration: false,
       offscreen: false,
       backgroundThrottling: false, // keep JS timers running when hidden
-      images: false               // don't load images — we only need text
-    }
+      images: false, // don't load images — we only need text
+    },
   });
   scraperWin.webContents.setUserAgent(REAL_UA);
   // Prevent audio/video from loading in the scraper
   scraperWin.webContents.setAudioMuted(true);
-  scraperWin.on("closed", () => { scraperWin = null; });
+  scraperWin.on("closed", () => {
+    scraperWin = null;
+  });
   return scraperWin;
 }
 
 function destroyScraper() {
   if (scraperWin && !scraperWin.isDestroyed()) {
-    try { scraperWin.destroy(); } catch {}
+    try {
+      scraperWin.destroy();
+    } catch {}
   }
   scraperWin = null;
 }
@@ -60,7 +85,7 @@ async function getSessionCookie() {
   // Try both domain variants in a single pass
   const [dotCookies, plainCookies] = await Promise.all([
     ses.cookies.get({ domain: ".claude.ai", name: "sessionKey" }),
-    ses.cookies.get({ domain: "claude.ai", name: "sessionKey" })
+    ses.cookies.get({ domain: "claude.ai", name: "sessionKey" }),
   ]);
   if (dotCookies && dotCookies.length) return dotCookies[0];
   if (plainCookies && plainCookies.length) return plainCookies[0];
@@ -68,7 +93,13 @@ async function getSessionCookie() {
 }
 
 async function isAuthenticated() {
-  return !!(await getSessionCookie());
+  const cookie = await getSessionCookie();
+  if (!cookie) return false;
+  // Treat cookies with a past expiration as gone (can happen after long sleep)
+  if (cookie.expirationDate && cookie.expirationDate < Date.now() / 1000) {
+    return false;
+  }
+  return true;
 }
 
 async function logout() {
@@ -76,14 +107,14 @@ async function logout() {
   // Clear both domain variants in parallel
   const [all1, all2] = await Promise.all([
     ses.cookies.get({ domain: ".claude.ai" }),
-    ses.cookies.get({ domain: "claude.ai" })
+    ses.cookies.get({ domain: "claude.ai" }),
   ]);
   const allCookies = [...all1, ...all2];
   await Promise.allSettled(
     allCookies.map((c) => {
       const url = `https://${c.domain.replace(/^\./, "")}${c.path || "/"}`;
       return ses.cookies.remove(url, c.name);
-    })
+    }),
   );
   // Also destroy the scraper so it picks up the cleared session next time
   destroyScraper();
@@ -99,8 +130,8 @@ function openLogin() {
       webPreferences: {
         partition: "persist:claude",
         contextIsolation: true,
-        nodeIntegration: false
-      }
+        nodeIntegration: false,
+      },
     });
     win.setMenuBarVisibility(false);
     win.webContents.setUserAgent(REAL_UA);
@@ -113,7 +144,7 @@ function openLogin() {
         const ses = win.webContents.session;
         const cookies = await ses.cookies.get({
           domain: ".claude.ai",
-          name: "sessionKey"
+          name: "sessionKey",
         });
         if (cookies && cookies.length) {
           // Copy cookies from the partition session into the default session
@@ -130,9 +161,9 @@ function openLogin() {
                 secure: c.secure,
                 httpOnly: c.httpOnly,
                 sameSite: c.sameSite,
-                expirationDate: c.expirationDate
-              })
-            )
+                expirationDate: c.expirationDate,
+              }),
+            ),
           );
           resolved = true;
           clearInterval(checkInterval);
@@ -152,10 +183,24 @@ function openLogin() {
 }
 
 // Scrape /settings/usage in a persistent hidden BrowserWindow, read DOM text.
+// On failure, destroys the scraper so the next call gets a fresh window.
 async function fetchUsageViaDOM() {
   const authed = await isAuthenticated();
   if (!authed) {
-    return { authenticated: false };
+    // Re-try by copying cookies from the persist:claude partition into
+    // defaultSession — the login window may have renewed them during sleep.
+    await rehydrateCookiesFromPartition();
+    const authed2 = await isAuthenticated();
+    if (!authed2) return { authenticated: false };
+  }
+
+  // Reset scraper if it navigated away from claude.ai (e.g. redirect to /login
+  // after a cookie expiry) so we start fresh rather than re-scraping a login page.
+  if (scraperWin && !scraperWin.isDestroyed()) {
+    const url = scraperWin.webContents.getURL();
+    if (url && !url.startsWith(CLAUDE_ORIGIN)) {
+      destroyScraper();
+    }
   }
 
   const win = getOrCreateScraper();
@@ -165,11 +210,47 @@ async function fetchUsageViaDOM() {
 
     // Wait for the usage UI to render. Poll the DOM up to ~12s.
     const data = await pollUntilParsed(win, 12_000);
+
+    // If we got redirected to login, the cookie is gone — report not authed
+    const finalUrl = win.webContents.getURL();
+    if (finalUrl && finalUrl.includes("/login")) {
+      destroyScraper();
+      return { authenticated: false };
+    }
+
     return { authenticated: true, ...data };
   } catch (err) {
     // If the window broke, reset it for next cycle
     destroyScraper();
     return { authenticated: true, error: String(err.message || err) };
+  }
+}
+
+// Copy cookies from the persist:claude partition (used by the login window)
+// into defaultSession so the scraper window can use them. This repairs the
+// state that can be lost after a sleep/wake cycle.
+async function rehydrateCookiesFromPartition() {
+  try {
+    const partitionSession = session.fromPartition("persist:claude");
+    const all = await partitionSession.cookies.get({ domain: ".claude.ai" });
+    if (!all.length) return;
+    await Promise.allSettled(
+      all.map((c) =>
+        session.defaultSession.cookies.set({
+          url: `https://${c.domain.replace(/^\./, "")}${c.path || "/"}`,
+          name: c.name,
+          value: c.value,
+          domain: c.domain,
+          path: c.path,
+          secure: c.secure,
+          httpOnly: c.httpOnly,
+          sameSite: c.sameSite,
+          expirationDate: c.expirationDate,
+        }),
+      ),
+    );
+  } catch {
+    // ignore — best effort
   }
 }
 
@@ -181,7 +262,6 @@ async function pollUntilParsed(win, timeoutMs) {
     try {
       text = await win.webContents.executeJavaScript(
         "document.body?document.body.innerText:''",
-        true
       );
     } catch {
       text = "";
@@ -196,7 +276,7 @@ async function pollUntilParsed(win, timeoutMs) {
   return {
     error: "Could not parse usage from claude.ai (UI may have changed).",
     raw_excerpt: lastText.slice(0, 500),
-    scraped_at: new Date().toISOString()
+    scraped_at: new Date().toISOString(),
   };
 }
 
@@ -265,5 +345,5 @@ module.exports = {
   isAuthenticated,
   logout,
   fetchUsageViaDOM,
-  destroy: destroyScraper
+  destroy: destroyScraper,
 };

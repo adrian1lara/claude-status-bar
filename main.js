@@ -6,18 +6,19 @@ const {
   ipcMain,
   nativeImage,
   screen,
-  shell
+  shell,
+  powerMonitor,
 } = require("electron");
 const path = require("path");
-const Store = require("electron-store");
+const Store = require("./simple-store");
 const claudeSession = require("./claude-session");
 
 const store = new Store({
   name: "claude-usage-bar",
   defaults: {
     poll_interval_seconds: 60,
-    launch_at_login: false
-  }
+    launch_at_login: false,
+  },
 });
 
 let tray = null;
@@ -27,6 +28,7 @@ let iconRenderer = null;
 let iconRendererReady = null;
 let pollTimer = null;
 let fetching = false;
+let isQuitting = false; // set true in before-quit so window-all-closed allows the exit
 
 // Cache the last-rendered icon to avoid re-rendering when percent is unchanged
 let lastRenderedPercent = undefined; // undefined = never rendered
@@ -41,7 +43,7 @@ let lastState = {
   weekly_resets_at: null,
   design_percent: null,
   last_updated: null,
-  error: null
+  error: null,
 };
 
 // ---------- helpers ----------
@@ -66,6 +68,16 @@ function buildTrayTitle(state) {
   return ` ${buildMiniBar(pct)} ${pct}%`;
 }
 
+function destroyIconRenderer() {
+  if (iconRenderer && !iconRenderer.isDestroyed()) {
+    try {
+      iconRenderer.destroy();
+    } catch {}
+  }
+  iconRenderer = null;
+  iconRendererReady = null;
+}
+
 function createIconRenderer() {
   iconRenderer = new BrowserWindow({
     width: 200,
@@ -78,8 +90,8 @@ function createIconRenderer() {
       contextIsolation: true,
       nodeIntegration: false,
       offscreen: false,
-      backgroundThrottling: false // keep responsive when hidden
-    }
+      backgroundThrottling: false, // keep responsive when hidden
+    },
   });
   iconRendererReady = new Promise((resolve) => {
     iconRenderer.webContents.once("did-finish-load", () => resolve());
@@ -88,7 +100,7 @@ function createIconRenderer() {
 }
 
 async function renderTrayIconImage(percent) {
-  if (!iconRenderer) return null;
+  if (!iconRenderer || iconRenderer.isDestroyed()) return null;
 
   // Return cached image if percent hasn't changed (saves IPC + canvas render)
   const roundedPct = typeof percent === "number" ? Math.round(percent) : null;
@@ -96,36 +108,39 @@ async function renderTrayIconImage(percent) {
     return lastRenderedImage;
   }
 
-  await iconRendererReady;
-  const arg = typeof percent === "number" ? percent : "null";
-  const dataUrl = await iconRenderer.webContents.executeJavaScript(
-    `window.renderIcon(${arg})`,
-    true
-  );
-  if (!dataUrl) return null;
-  const base64 = dataUrl.split(",")[1];
-  if (!base64) return null;
-  const buf = Buffer.from(base64, "base64");
-  // scaleFactor: 2 tells Electron the PNG is @2x retina, so its logical
-  // size in the menu bar is half the pixel dimensions.
-  const img = nativeImage.createFromBuffer(buf, { scaleFactor: 2 });
-  img.setTemplateImage(true);
-
-  // Cache the result
-  lastRenderedPercent = roundedPct;
-  lastRenderedImage = img;
-
-  return img;
+  try {
+    await iconRendererReady;
+    if (!iconRenderer || iconRenderer.isDestroyed()) return null;
+    const arg = typeof percent === "number" ? percent : "null";
+    const dataUrl = await iconRenderer.webContents.executeJavaScript(
+      `window.renderIcon(${arg})`,
+      true,
+    );
+    if (!dataUrl) return null;
+    const base64 = dataUrl.split(",")[1];
+    if (!base64) return null;
+    const buf = Buffer.from(base64, "base64");
+    // scaleFactor: 2 tells Electron the PNG is @2x retina, so its logical
+    // size in the menu bar is half the pixel dimensions.
+    const img = nativeImage.createFromBuffer(buf, { scaleFactor: 2 });
+    img.setTemplateImage(true);
+    lastRenderedPercent = roundedPct;
+    lastRenderedImage = img;
+    return img;
+  } catch {
+    return null;
+  }
 }
 
 function buildTrayTooltip(state) {
-  if (!state.authenticated) return "Claude Usage: not signed in — click to sign in";
+  if (!state.authenticated)
+    return "Claude Usage: not signed in — click to sign in";
   if (state.error && state.session_percent == null) {
     return `Claude Usage: ${state.error}`;
   }
   if (state.session_percent == null) return "Claude Usage: loading…";
   const parts = [
-    `Session: ${state.session_percent}% (resets in ${state.session_resets_in || "?"})`
+    `Session: ${state.session_percent}% (resets in ${state.session_resets_in || "?"})`,
   ];
   if (state.weekly_percent != null) {
     parts.push(`Weekly: ${state.weekly_percent}%`);
@@ -160,7 +175,7 @@ async function refreshUsage() {
         ...lastState,
         authenticated: false,
         error: "Not signed in",
-        last_updated: new Date().toISOString()
+        last_updated: new Date().toISOString(),
       };
     } else {
       lastState = {
@@ -172,14 +187,14 @@ async function refreshUsage() {
         weekly_resets_at: result.weekly_resets_at ?? null,
         design_percent: result.design_percent ?? null,
         last_updated: new Date().toISOString(),
-        error: result.error || null
+        error: result.error || null,
       };
     }
   } catch (err) {
     lastState = {
       ...lastState,
       error: String(err.message || err),
-      last_updated: new Date().toISOString()
+      last_updated: new Date().toISOString(),
     };
   } finally {
     fetching = false;
@@ -194,7 +209,7 @@ function pushStateEverywhere() {
   }
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     settingsWindow.webContents.send("auth:update", {
-      authenticated: lastState.authenticated
+      authenticated: lastState.authenticated,
     });
   }
 }
@@ -232,7 +247,7 @@ function createTray() {
       { label: "Refresh now", click: () => refreshUsage() },
       { label: "Settings…", click: () => openSettings() },
       { type: "separator" },
-      { label: "Quit", click: () => app.quit() }
+      { label: "Quit", click: () => cleanupAndQuit() },
     ]);
     tray.popUpContextMenu(menu);
   });
@@ -255,8 +270,8 @@ function createPopover() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      backgroundThrottling: true // save CPU when popover is hidden
-    }
+      backgroundThrottling: true, // save CPU when popover is hidden
+    },
   });
   popoverWindow.loadFile(path.join(__dirname, "renderer", "popover.html"));
   popoverWindow.on("blur", () => {
@@ -313,8 +328,8 @@ function openSettings() {
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
-      nodeIntegration: false
-    }
+      nodeIntegration: false,
+    },
   });
   settingsWindow.setMenuBarVisibility(false);
   settingsWindow.loadFile(path.join(__dirname, "renderer", "settings.html"));
@@ -327,7 +342,10 @@ function openSettings() {
 
 function restartPolling() {
   if (pollTimer) clearInterval(pollTimer);
-  const seconds = Math.max(30, Number(store.get("poll_interval_seconds")) || 60);
+  const seconds = Math.max(
+    30,
+    Number(store.get("poll_interval_seconds")) || 60,
+  );
   pollTimer = setInterval(refreshUsage, seconds * 1000);
   refreshUsage();
 }
@@ -336,21 +354,21 @@ function restartPolling() {
 
 ipcMain.handle("settings:get", () => ({
   poll_interval_seconds: store.get("poll_interval_seconds"),
-  launch_at_login: store.get("launch_at_login")
+  launch_at_login: store.get("launch_at_login"),
 }));
 
 ipcMain.handle("settings:save", (_e, settings) => {
   if (settings.poll_interval_seconds) {
     store.set(
       "poll_interval_seconds",
-      Math.max(30, Number(settings.poll_interval_seconds) || 60)
+      Math.max(30, Number(settings.poll_interval_seconds) || 60),
     );
   }
   if (typeof settings.launch_at_login === "boolean") {
     store.set("launch_at_login", settings.launch_at_login);
     app.setLoginItemSettings({
       openAtLogin: settings.launch_at_login,
-      openAsHidden: true
+      openAsHidden: true,
     });
   }
   restartPolling();
@@ -358,7 +376,7 @@ ipcMain.handle("settings:save", (_e, settings) => {
 });
 
 ipcMain.handle("auth:status", async () => ({
-  authenticated: await claudeSession.isAuthenticated()
+  authenticated: await claudeSession.isAuthenticated(),
 }));
 
 ipcMain.handle("auth:login", async () => {
@@ -374,7 +392,7 @@ ipcMain.handle("auth:logout", async () => {
     authenticated: false,
     session_percent: null,
     weekly_percent: null,
-    error: null
+    error: null,
   };
   // Invalidate cached icon
   lastRenderedPercent = undefined;
@@ -402,6 +420,34 @@ ipcMain.handle("app:openExternal", (_e, url) => {
 
 // ---------- lifecycle ----------
 
+// setInterval drifts badly after sleep (macOS pauses the timer for the full
+// sleep duration). On resume, immediately refresh and restart the interval
+// so the bar shows fresh data as soon as the lid opens.
+function handleResume() {
+  restartPolling();
+}
+
+// Tear down all native resources in a safe order:
+// tray must be destroyed before the process exits on Windows — the Shell's
+// notification-area holds a native handle that causes a null-pointer AV if
+// the process is killed while it still exists.
+function cleanupAndQuit() {
+  isQuitting = true;
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+  claudeSession.destroy();
+  destroyIconRenderer();
+  if (tray) {
+    try {
+      tray.destroy();
+    } catch {}
+    tray = null;
+  }
+  app.quit();
+}
+
 app.whenReady().then(async () => {
   if (process.platform === "darwin" && app.dock) {
     app.dock.setIcon(path.join(__dirname, "assets", "app-icon.png"));
@@ -411,6 +457,9 @@ app.whenReady().then(async () => {
   createTray();
   // Popover is now lazy-created on first click (not at startup)
 
+  // powerMonitor is only available after app is ready
+  powerMonitor.on("resume", handleResume);
+
   const authed = await claudeSession.isAuthenticated();
   if (!authed) {
     openSettings();
@@ -419,12 +468,34 @@ app.whenReady().then(async () => {
   restartPolling();
 });
 
+// On Windows, closing the last window normally quits the app. We prevent that
+// so the app lives as a tray-only process — UNLESS isQuitting is true, which
+// means the OS (shutdown/logoff) or the user chose Quit from the tray menu.
 app.on("window-all-closed", (e) => {
-  e.preventDefault?.();
+  if (!isQuitting) e.preventDefault();
 });
 
-// Clean up persistent resources on quit
+// before-quit fires for both app.quit() calls and OS shutdown/logoff signals.
+// Set the flag here so window-all-closed (fired next) lets the quit proceed.
+app.on("before-quit", () => {
+  isQuitting = true;
+});
+
+// will-quit is the last hook before the process exits. Native resources
+// (tray, iconRenderer) must already be cleaned up by this point — they may
+// be in an undefined state if the OS is forcing a shutdown, so guard every
+// call and swallow errors.
 app.on("will-quit", () => {
-  if (pollTimer) clearInterval(pollTimer);
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
   claudeSession.destroy();
+  destroyIconRenderer();
+  if (tray) {
+    try {
+      tray.destroy();
+    } catch {}
+    tray = null;
+  }
 });
