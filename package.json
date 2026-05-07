@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-bar",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Menu bar / system tray app showing Claude API usage in real time",
   "main": "main.js",
   "author": "Adrian Lara",
