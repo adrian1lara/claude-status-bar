@@ -149,3 +149,6 @@ Already covered by `.gitignore`: `node_modules/`, `dist/`, `.DS_Store`,
 - Don't introduce a build step for the renderer (no bundler, no TS).
   HTML/JS files are loaded directly by Electron — keep it that way
   unless explicitly asked.
+- **Always ask before `git commit` or `git push`**, even when applying
+  fixes or updates. Make the code changes, show what is ready, and wait
+  for explicit approval before touching git.

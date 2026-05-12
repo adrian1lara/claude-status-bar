@@ -272,6 +272,19 @@ function createPopover() {
       backgroundThrottling: true, // save CPU when popover is hidden
     },
   });
+
+  if (process.platform === "darwin") {
+    // Without these two calls, clicking the tray icon from a different Space
+    // or a fullscreen app causes macOS to switch the user back to the Space
+    // where this window was created. visibleOnAllWorkspaces pins the window
+    // to every Space, and the 'pop-up-menu' level lets it render above
+    // fullscreen app chrome, matching the behaviour of other menu-bar apps.
+    popoverWindow.setVisibleOnAllWorkspaces(true, {
+      visibleOnFullScreen: true,
+    });
+    popoverWindow.setAlwaysOnTop(true, "pop-up-menu");
+  }
+
   popoverWindow.loadFile(path.join(__dirname, "renderer", "popover.html"));
   popoverWindow.on("blur", () => {
     if (popoverWindow && !popoverWindow.webContents.isDevToolsOpened()) {
