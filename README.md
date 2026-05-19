@@ -127,15 +127,15 @@ To sign out: use the **Sign out** button in Settings, or delete that folder.
 ## Run from source
 
 ```bash
-npm install
-npm start
+pnpm install
+pnpm start
 ```
 
 ## Build binaries
 
 ```bash
-npm run build:mac   # .dmg (arm64 + x64)
-npm run build:win   # .exe (NSIS, x64)
+pnpm run build:mac   # .dmg (arm64 + x64)
+pnpm run build:win   # .exe (NSIS, x64)
 ```
 
 ## License

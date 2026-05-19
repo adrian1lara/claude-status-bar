@@ -254,10 +254,18 @@ function createTray() {
 
 // ---------- popover ----------
 
+function assertPopoverWorkspace() {
+  if (process.platform !== "darwin" || !popoverWindow || popoverWindow.isDestroyed()) return;
+  // Re-assert on every show — macOS can lose these after hide/show cycles.
+  popoverWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  popoverWindow.setAlwaysOnTop(true, "pop-up-menu");
+}
+
 function createPopover() {
+  const isDarwin = process.platform === "darwin";
   popoverWindow = new BrowserWindow({
     width: 340,
-    height: 280,
+    height: 300,
     show: false,
     frame: false,
     resizable: false,
@@ -265,25 +273,20 @@ function createPopover() {
     skipTaskbar: true,
     alwaysOnTop: true,
     fullscreenable: false,
+    ...(isDarwin && {
+      transparent: true,
+      vibrancy: "hud",
+      backgroundColor: "#00000000",
+    }),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      backgroundThrottling: true, // save CPU when popover is hidden
+      backgroundThrottling: true,
     },
   });
 
-  if (process.platform === "darwin") {
-    // Without these two calls, clicking the tray icon from a different Space
-    // or a fullscreen app causes macOS to switch the user back to the Space
-    // where this window was created. visibleOnAllWorkspaces pins the window
-    // to every Space, and the 'pop-up-menu' level lets it render above
-    // fullscreen app chrome, matching the behaviour of other menu-bar apps.
-    popoverWindow.setVisibleOnAllWorkspaces(true, {
-      visibleOnFullScreen: true,
-    });
-    popoverWindow.setAlwaysOnTop(true, "pop-up-menu");
-  }
+  assertPopoverWorkspace();
 
   popoverWindow.loadFile(path.join(__dirname, "renderer", "popover.html"));
   popoverWindow.on("blur", () => {
@@ -318,6 +321,7 @@ function togglePopover(bounds) {
     return;
   }
   if (bounds) positionPopover(bounds);
+  assertPopoverWorkspace();
   popoverWindow.show();
   popoverWindow.focus();
 }

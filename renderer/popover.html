@@ -1,77 +1,173 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8"/>
   <title>Claude Usage</title>
   <style>
     :root {
-      --bg: #1c1c1e; --panel: #2a2a2d; --text: #f5f5f7;
-      --muted: #9a9aa2; --accent: #cc785c;
+      --text: #f5f5f7;
+      --muted: rgba(245, 245, 247, 0.48);
+      --separator: rgba(255, 255, 255, 0.1);
+      --surface: rgba(255, 255, 255, 0.08);
+      --surface-hover: rgba(255, 255, 255, 0.16);
+      --accent: #cc785c;
     }
     * { box-sizing: border-box; }
     html, body {
       margin: 0; padding: 0;
-      background: var(--bg); color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-      font-size: 13px; -webkit-user-select: none; user-select: none; overflow: hidden;
+      background: transparent;
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      font-size: 13px;
+      -webkit-user-select: none; user-select: none;
+      overflow: hidden;
+      border-radius: 14px;
+      height: 100%;
     }
-    .container { padding: 14px 16px; }
-    .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
-    .title { font-weight: 600; font-size: 12px; color: var(--muted); letter-spacing: 0.4px; text-transform: uppercase; }
+    .container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      border: 1px solid var(--separator);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 13px 16px 8px;
+    }
+    .title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
     .plan { font-size: 11px; color: var(--muted); }
-    .section { margin-top: 12px; }
-    .section-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.4px; }
-    .row { display: flex; justify-content: space-between; align-items: baseline; }
-    .pct { font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; }
-    .meta { font-size: 12px; color: var(--muted); }
-    .bar { width: 100%; height: 6px; background: #3a3a3d; border-radius: 4px; overflow: hidden; margin-top: 6px; }
-    .bar-fill { height: 100%; width: 0%; transition: width 250ms ease, background-color 250ms ease; background: #3fb950; }
-    .footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 14px; }
-    button { background: var(--panel); color: var(--text); border: 1px solid #3a3a3d; border-radius: 6px;
-      padding: 6px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
-    button:hover { background: #34343a; }
-    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-    button.primary:hover { background: #b86a4f; }
+
+    .body {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #data {
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      width: 100%;
+      padding: 0 12px 14px;
+    }
+    .ring-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .ring-svg { width: 112px; height: 112px; }
+    .ring-arc {
+      transition: stroke-dashoffset 400ms ease, stroke 400ms ease;
+    }
+    .ring-label {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .ring-meta { font-size: 10px; color: var(--muted); }
+
+    #empty {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .sep { height: 1px; background: var(--separator); }
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 9px 14px;
+    }
     .updated { font-size: 11px; color: var(--muted); }
-    .empty { color: var(--muted); font-size: 12px; padding: 20px 0; text-align: center; }
-    .empty button { margin-top: 10px; }
+    .btn-row { display: flex; gap: 6px; }
+    button {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--separator);
+      border-radius: 8px;
+      padding: 5px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 120ms;
+    }
+    button:hover { background: var(--surface-hover); }
+    button.primary {
+      background: rgba(204, 120, 92, 0.75);
+      border-color: rgba(204, 120, 92, 0.4);
+      color: #fff;
+    }
+    button.primary:hover { background: rgba(184, 106, 79, 0.9); }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <div class="title">Claude Usage</div>
-      <div class="plan" id="plan"></div>
+      <span class="title">Claude Usage</span>
+      <span class="plan" id="plan"></span>
     </div>
 
-    <div id="empty" class="empty" style="display:none">
-      <div id="emptyMsg">Not signed in to claude.ai</div>
-      <button class="primary" id="signInBtn">Sign in</button>
-    </div>
-
-    <div id="data">
-      <div class="section">
-        <div class="section-label">Current session</div>
-        <div class="row">
-          <div class="pct" id="sessionPct">—</div>
-          <div class="meta" id="sessionReset">—</div>
-        </div>
-        <div class="bar"><div class="bar-fill" id="sessionBar"></div></div>
+    <div class="body">
+      <div id="empty">
+        <div id="emptyMsg">Not signed in to claude.ai</div>
+        <button class="primary" id="signInBtn">Sign in</button>
       </div>
 
-      <div class="section">
-        <div class="section-label">Weekly · all models</div>
-        <div class="row">
-          <div class="pct" id="weeklyPct">—</div>
-          <div class="meta" id="weeklyReset">—</div>
+      <div id="data">
+        <!-- Session ring -->
+        <div class="ring-group">
+          <svg class="ring-svg" viewBox="0 0 100 100">
+            <circle fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="7" cx="50" cy="50" r="41"/>
+            <circle class="ring-arc" id="sessionArc" fill="none" stroke="#3fb950" stroke-width="7"
+              stroke-linecap="round" cx="50" cy="50" r="41"
+              stroke-dasharray="257.6" stroke-dashoffset="257.6"
+              transform="rotate(-90 50 50)"/>
+            <text id="sessionPct" x="50" y="50" text-anchor="middle" dominant-baseline="central"
+              font-size="19" font-weight="700" font-family="-apple-system,sans-serif" fill="white">—</text>
+          </svg>
+          <div class="ring-label">Session</div>
+          <div class="ring-meta" id="sessionReset">—</div>
         </div>
-        <div class="bar"><div class="bar-fill" id="weeklyBar"></div></div>
+
+        <!-- Weekly ring -->
+        <div class="ring-group">
+          <svg class="ring-svg" viewBox="0 0 100 100">
+            <circle fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="7" cx="50" cy="50" r="41"/>
+            <circle class="ring-arc" id="weeklyArc" fill="none" stroke="#3fb950" stroke-width="7"
+              stroke-linecap="round" cx="50" cy="50" r="41"
+              stroke-dasharray="257.6" stroke-dashoffset="257.6"
+              transform="rotate(-90 50 50)"/>
+            <text id="weeklyPct" x="50" y="50" text-anchor="middle" dominant-baseline="central"
+              font-size="19" font-weight="700" font-family="-apple-system,sans-serif" fill="white">—</text>
+          </svg>
+          <div class="ring-label">Weekly</div>
+          <div class="ring-meta" id="weeklyReset">—</div>
+        </div>
       </div>
     </div>
 
+    <div class="sep"></div>
     <div class="footer">
       <span class="updated" id="updated">—</span>
-      <div>
+      <div class="btn-row">
         <button id="settingsBtn">Settings</button>
         <button class="primary" id="refreshBtn">Refresh</button>
       </div>

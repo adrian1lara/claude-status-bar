@@ -1,7 +1,10 @@
 const $ = (id) => document.getElementById(id);
 
+// 2π * r=41
+const CIRC = 257.6;
+
 function colorFor(pct) {
-  if (pct == null) return "#9a9aa2";
+  if (pct == null) return "rgba(255,255,255,0.15)";
   if (pct < 50) return "#3fb950";
   if (pct < 80) return "#f0a020";
   return "#f85149";
@@ -13,47 +16,41 @@ function fmtUpdated(iso) {
   catch { return "—"; }
 }
 
-function setBar(barEl, pctEl, pct) {
+function setRing(arcEl, pctEl, pct) {
+  const color = colorFor(pct);
+  arcEl.setAttribute("stroke", color);
   if (pct == null) {
-    barEl.style.width = "0%";
-    barEl.style.background = "#3a3a3d";
+    arcEl.style.strokeDashoffset = CIRC;
     pctEl.textContent = "—";
-    pctEl.style.color = "var(--text)";
-    return;
+  } else {
+    arcEl.style.strokeDashoffset = CIRC * (1 - Math.min(100, pct) / 100);
+    pctEl.textContent = `${Math.round(pct)}%`;
   }
-  const c = colorFor(pct);
-  barEl.style.width = `${Math.min(100, pct)}%`;
-  barEl.style.background = c;
-  pctEl.textContent = `${pct}%`;
-  pctEl.style.color = c;
 }
 
 function render(state) {
-  if (!state.authenticated) {
+  if (!state.authenticated || (state.error && state.session_percent == null)) {
     $("data").style.display = "none";
-    $("empty").style.display = "block";
-    $("emptyMsg").textContent = "Not signed in to claude.ai";
+    $("empty").style.display = "flex";
+    $("emptyMsg").textContent =
+      state.error && state.error !== "Not signed in"
+        ? state.error
+        : "Not signed in to claude.ai";
     $("plan").textContent = "";
   } else {
-    $("data").style.display = "block";
+    $("data").style.display = "flex";
     $("empty").style.display = "none";
-    $("plan").textContent = state.plan ? state.plan : "";
+    $("plan").textContent = state.plan || "";
 
-    setBar($("sessionBar"), $("sessionPct"), state.session_percent);
+    setRing($("sessionArc"), $("sessionPct"), state.session_percent);
     $("sessionReset").textContent = state.session_resets_in
       ? `resets in ${state.session_resets_in}`
       : "—";
 
-    setBar($("weeklyBar"), $("weeklyPct"), state.weekly_percent);
+    setRing($("weeklyArc"), $("weeklyPct"), state.weekly_percent);
     $("weeklyReset").textContent = state.weekly_resets_at
       ? `resets ${state.weekly_resets_at}`
       : "—";
-
-    if (state.error && state.session_percent == null) {
-      $("data").style.display = "none";
-      $("empty").style.display = "block";
-      $("emptyMsg").textContent = state.error;
-    }
   }
   $("updated").textContent = fmtUpdated(state.last_updated);
 }
