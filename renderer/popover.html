@@ -116,6 +116,15 @@
       color: #fff;
     }
     button.primary:hover { background: rgba(184, 106, 79, 0.9); }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --text: #1d1d1f;
+        --muted: rgba(29, 29, 31, 0.55);
+        --separator: rgba(0, 0, 0, 0.1);
+        --surface: rgba(0, 0, 0, 0.06);
+        --surface-hover: rgba(0, 0, 0, 0.12);
+      }
+    }
   </style>
 </head>
 <body>
@@ -135,13 +144,13 @@
         <!-- Session ring -->
         <div class="ring-group">
           <svg class="ring-svg" viewBox="0 0 100 100">
-            <circle fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="7" cx="50" cy="50" r="41"/>
+            <circle fill="none" stroke="rgba(128,128,128,0.18)" stroke-width="7" cx="50" cy="50" r="41"/>
             <circle class="ring-arc" id="sessionArc" fill="none" stroke="#3fb950" stroke-width="7"
               stroke-linecap="round" cx="50" cy="50" r="41"
               stroke-dasharray="257.6" stroke-dashoffset="257.6"
               transform="rotate(-90 50 50)"/>
             <text id="sessionPct" x="50" y="50" text-anchor="middle" dominant-baseline="central"
-              font-size="19" font-weight="700" font-family="-apple-system,sans-serif" fill="white">—</text>
+              font-size="19" font-weight="700" font-family="-apple-system,sans-serif" fill="currentColor">—</text>
           </svg>
           <div class="ring-label">Session</div>
           <div class="ring-meta" id="sessionReset">—</div>
@@ -150,13 +159,13 @@
         <!-- Weekly ring -->
         <div class="ring-group">
           <svg class="ring-svg" viewBox="0 0 100 100">
-            <circle fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="7" cx="50" cy="50" r="41"/>
+            <circle fill="none" stroke="rgba(128,128,128,0.18)" stroke-width="7" cx="50" cy="50" r="41"/>
             <circle class="ring-arc" id="weeklyArc" fill="none" stroke="#3fb950" stroke-width="7"
               stroke-linecap="round" cx="50" cy="50" r="41"
               stroke-dasharray="257.6" stroke-dashoffset="257.6"
               transform="rotate(-90 50 50)"/>
             <text id="weeklyPct" x="50" y="50" text-anchor="middle" dominant-baseline="central"
-              font-size="19" font-weight="700" font-family="-apple-system,sans-serif" fill="white">—</text>
+              font-size="19" font-weight="700" font-family="-apple-system,sans-serif" fill="currentColor">—</text>
           </svg>
           <div class="ring-label">Weekly</div>
           <div class="ring-meta" id="weeklyReset">—</div>

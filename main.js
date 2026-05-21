@@ -275,7 +275,7 @@ function createPopover() {
     fullscreenable: false,
     ...(isDarwin && {
       transparent: true,
-      vibrancy: "hud",
+      vibrancy: "sidebar",
       backgroundColor: "#00000000",
     }),
     webPreferences: {
@@ -315,15 +315,25 @@ function positionPopover(bounds) {
 }
 
 function togglePopover(bounds) {
-  if (!popoverWindow) createPopover();
-  if (popoverWindow.isVisible()) {
+  if (!popoverWindow || popoverWindow.isDestroyed()) {
+    popoverWindow = null;
+    createPopover();
+  }
+  if (popoverWindow && popoverWindow.isVisible()) {
     popoverWindow.hide();
     return;
   }
   if (bounds) positionPopover(bounds);
   assertPopoverWorkspace();
-  popoverWindow.show();
-  popoverWindow.focus();
+  // showInactive() uses orderFrontRegardless (no activateIgnoringOtherApps call),
+  // so macOS does not switch Spaces. focus() is deferred one tick so the window
+  // is already anchored to the current Space before macOS processes the request.
+  popoverWindow.showInactive();
+  setImmediate(() => {
+    if (popoverWindow && !popoverWindow.isDestroyed() && popoverWindow.isVisible()) {
+      popoverWindow.focus();
+    }
+  });
 }
 
 // ---------- settings ----------
@@ -446,6 +456,13 @@ ipcMain.handle("app:openExternal", (_e, url) => {
 // sleep duration). On resume, immediately refresh and restart the interval
 // so the bar shows fresh data as soon as the lid opens.
 function handleResume() {
+  // Destroy the popover on wake so the next click recreates it fresh.
+  // macOS can leave BrowserWindows in an invalid/unresponsive state after
+  // sleep, causing showInactive() to silently fail.
+  if (popoverWindow && !popoverWindow.isDestroyed()) {
+    popoverWindow.destroy();
+    popoverWindow = null;
+  }
   restartPolling();
 }
 
